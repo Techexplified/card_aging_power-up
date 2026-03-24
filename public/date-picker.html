@@ -1,0 +1,27 @@
+<!-- public/date-picker.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+  <h4>Select a Date</h4>
+  <input type="date" id="dateInput" />
+  <button id="saveBtn">Save</button>
+
+  <script>
+    var t = window.TrelloPowerUp.iframe();
+    
+    document.getElementById('saveBtn').addEventListener('click', function(){
+      var selectedDate = document.getElementById('dateInput').value;
+      if (selectedDate) {
+        // Save the chosen date to Trello and close the popup
+        t.set('card', 'shared', 'customStartDate', new Date(selectedDate).toISOString())
+         .then(function(){
+           t.closePopup();
+         });
+      }
+    });
+  </script>
+</body>
+</html>
