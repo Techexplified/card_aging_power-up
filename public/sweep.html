@@ -4,8 +4,15 @@
   <link rel="stylesheet" href="https://p.trellocdn.com/power-up.css">
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
   <style>
-    body { padding: 20px; text-align: center; font-family: -apple-system, sans-serif; }
-    #status { font-size: 16px; margin-bottom: 20px; color: #172b4d; }
+    /* Dark Mode Fixes */
+    :root { --text-main: #172b4d; }
+    @media (prefers-color-scheme: dark) {
+      :root { --text-main: #b6c2cf; }
+      body { background-color: #323940; }
+    }
+    
+    body { padding: 20px; text-align: center; font-family: -apple-system, sans-serif; color: var(--text-main); }
+    #status { font-size: 16px; margin-bottom: 20px; }
     .btn-container { margin-top: 20px; }
   </style>
 </head>
@@ -18,7 +25,6 @@
     // 🚨 PASTE YOUR API KEY HERE BETWEEN THE QUOTES
     const API_KEY = '5b2558826e55786ecfd7f2a39146e731';
 
-    // Initialize iframe with appKey so Trello allows REST API access
     var t = window.TrelloPowerUp.iframe({
       appKey: API_KEY,
       appName: 'Card Aging Power-Up'
@@ -28,7 +34,6 @@
     let boardLists = [];
 
     t.render(function() {
-      // Get settings, all lists, and all cards
       Promise.all([
         t.get('board', 'shared'),
         t.lists('all'),
@@ -39,9 +44,7 @@
         const threshold = settings.sweepThreshold || 30;
         const now = new Date();
 
-        // 1. Find cards that exceed the threshold
         foundStaleCards = cards.filter(card => {
-          // Skip cards that are ALREADY in the "Stale Cards" list
           const list = lists.find(l => l.id === card.idList);
           if (list && list.name.toLowerCase() === 'stale cards') return false;
 
@@ -52,27 +55,25 @@
         const statusEl = document.getElementById('status');
         const actionEl = document.getElementById('action-area');
 
-        // If no cards need moving
+        // IF NO CARDS FOUND - DO NOT AUTO CLOSE
         if (foundStaleCards.length === 0) {
-          statusEl.innerHTML = `✅ Board is clean! No cards inactive for ${threshold}+ days.`;
-          setTimeout(() => t.closeModal(), 2000);
+          statusEl.innerHTML = `✅ <strong>Board is clean!</strong><br><br>No cards outside the 'Stale Cards' list have been inactive for ${threshold}+ days.`;
+          actionEl.innerHTML = `<button id="closeBtn" class="mod-primary">Close</button>`;
+          document.getElementById('closeBtn').addEventListener('click', () => t.closeModal());
           return;
         }
 
         statusEl.innerHTML = `Found <strong>${foundStaleCards.length}</strong> cards inactive for ${threshold}+ days.`;
 
-        // 2. Check if the user has authorized Trello
         t.getRestApi().isAuthorized().then(function(isAuth) {
           if (!isAuth) {
-            // Show Auth Button
             actionEl.innerHTML = `<button id="authBtn" class="mod-primary">Authorize Trello to Move Cards</button>`;
             document.getElementById('authBtn').addEventListener('click', function() {
               t.getRestApi().authorize({ scope: 'read,write', expiration: '30days' })
-                .then(() => runSweep()) // Run the sweep after successful auth
+                .then(() => runSweep()) 
                 .catch(e => console.error("Auth failed", e));
             });
           } else {
-            // Already authorized, show Sweep button
             actionEl.innerHTML = `<button id="sweepBtn" class="mod-danger">Move ${foundStaleCards.length} Cards Now</button>`;
             document.getElementById('sweepBtn').addEventListener('click', runSweep);
           }
@@ -80,18 +81,16 @@
       });
     });
 
-    // 3. The actual API Engine to move cards
     async function runSweep() {
       const statusEl = document.getElementById('status');
       const actionEl = document.getElementById('action-area');
-      actionEl.innerHTML = ''; // Hide button
+      actionEl.innerHTML = ''; 
 
       try {
         const token = await t.getRestApi().getToken();
         const boardId = t.getContext().board;
         const authStr = `key=${API_KEY}&token=${token}`;
 
-        // A. Find or Create the "Stale Cards" list
         statusEl.innerText = "Setting up Stale Cards list...";
         let staleListId = null;
         const staleList = boardLists.find(l => l.name.toLowerCase() === 'stale cards');
@@ -99,31 +98,28 @@
         if (staleList) {
           staleListId = staleList.id;
         } else {
-          // List doesn't exist, tell Trello to create it
           const listRes = await fetch(`https://api.trello.com/1/lists?name=Stale+Cards&idBoard=${boardId}&pos=bottom&${authStr}`, { method: 'POST' });
           const newList = await listRes.json();
           staleListId = newList.id;
         }
 
-        // B. Process each stale card
         let count = 0;
         for (const card of foundStaleCards) {
           count++;
           statusEl.innerText = `Moving card ${count} of ${foundStaleCards.length}...`;
 
-          // Find the name of the list this card is currently in
           const originalList = boardLists.find(l => l.id === card.idList);
           const listName = originalList ? originalList.name : 'Old List';
 
-          // Tell Trello to add a gray label with the old list's name to the card
+          // Add label and move card
           await fetch(`https://api.trello.com/1/cards/${card.id}/labels?color=null&name=${encodeURIComponent(listName)}&${authStr}`, { method: 'POST' });
-
-          // Tell Trello to move the card to the Stale Cards list
           await fetch(`https://api.trello.com/1/cards/${card.id}?idList=${staleListId}&${authStr}`, { method: 'PUT' });
         }
 
-        statusEl.innerHTML = `✅ Successfully swept ${foundStaleCards.length} cards!`;
-        setTimeout(() => t.closeModal(), 3000); // Close the popup
+        // FINISHED - DO NOT AUTO CLOSE
+        statusEl.innerHTML = `✅ <strong>Successfully swept ${foundStaleCards.length} cards!</strong><br>Check your 'Stale Cards' list.`;
+        actionEl.innerHTML = `<button id="closeBtn" class="mod-primary">Done</button>`;
+        document.getElementById('closeBtn').addEventListener('click', () => t.closeModal());
 
       } catch (error) {
         console.error(error);
@@ -133,3 +129,5 @@
   </script>
 </body>
 </html>
+
+

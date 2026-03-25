@@ -6,6 +6,11 @@
   <style>
     body { padding: 12px; font-family: -apple-system, sans-serif; }
     .row { margin-bottom: 15px; }
+    /* Dark mode support for settings popup */
+    @media (prefers-color-scheme: dark) {
+      body { color: #b6c2cf; background-color: #282e33; }
+      input[type="number"] { background: #22272b; color: white; border: 1px solid #738496; }
+    }
   </style>
 </head>
 <body>
@@ -21,9 +26,16 @@
   <button id="saveBtn" class="mod-primary">Save Settings</button>
 
   <script>
-    var t = window.TrelloPowerUp.iframe();
+    // 🚨 PASTE YOUR API KEY HERE BETWEEN THE QUOTES
+    const API_KEY = '5b2558826e55786ecfd7f2a39146e731';
 
-    // Load existing settings when opened
+    // We must initialize with the appKey so we can use the REST API to move cards
+    var t = window.TrelloPowerUp.iframe({
+      appKey: API_KEY,
+      appName: 'Card Aging Power-Up'
+    });
+
+    // 1. Load existing settings when opened
     t.render(function() {
       t.get('board', 'shared').then(function(data) {
         if (data) {
@@ -33,8 +45,53 @@
       });
     });
 
-    // Save settings back to the board
-    document.getElementById('saveBtn').addEventListener('click', function() {
+    // 2. The "Undo" Engine: Moves cards back to their original lists
+    async function restoreCards() {
+      try {
+        // Ensure we are authorized to move cards
+        const isAuth = await t.getRestApi().isAuthorized();
+        if (!isAuth) return; 
+
+        const token = await t.getRestApi().getToken();
+        const authStr = `key=${API_KEY}&token=${token}`;
+
+        // Get all lists and find the Stale Cards list
+        const lists = await t.lists('all');
+        const staleList = lists.find(l => l.name.toLowerCase() === 'stale cards');
+        if (!staleList) return; // No stale list exists, nothing to do
+
+        // Get all cards and filter for the ones currently in the Stale List
+        const allCards = await t.cards('id', 'idList', 'labels');
+        const cardsToRestore = allCards.filter(c => c.idList === staleList.id);
+
+        for (const card of cardsToRestore) {
+          let targetListId = null;
+          let labelToRemoveId = null;
+
+          // Look at the card's labels to figure out where it came from
+          for (const label of card.labels) {
+            const matchedList = lists.find(l => l.name === label.name);
+            if (matchedList) {
+              targetListId = matchedList.id;
+              labelToRemoveId = label.id;
+              break;
+            }
+          }
+
+          if (targetListId) {
+            // Move card back to its original list
+            await fetch(`https://api.trello.com/1/cards/${card.id}?idList=${targetListId}&${authStr}`, { method: 'PUT' });
+            // Remove the gray label
+            await fetch(`https://api.trello.com/1/cards/${card.id}/idLabels/${labelToRemoveId}?${authStr}`, { method: 'DELETE' });
+          }
+        }
+      } catch (e) {
+        console.error("Failed to restore cards:", e);
+      }
+    }
+
+    // 3. Handle the Save Button Click
+    document.getElementById('saveBtn').addEventListener('click', async function() {
       const btn = document.getElementById('saveBtn');
       btn.textContent = "Saving...";
       btn.disabled = true;
@@ -42,20 +99,30 @@
       const isEnabled = document.getElementById('enableToggle').checked;
       const days = parseInt(document.getElementById('daysInput').value, 10) || 30;
 
-      t.set('board', 'shared', {
+      // Check if the user is DISABLING the feature right now
+      const currentData = await t.get('board', 'shared');
+      const wasEnabled = currentData ? currentData.sweepEnabled : false;
+
+      // If it was turned ON, and they just turned it OFF...
+      if (wasEnabled && !isEnabled) {
+        btn.textContent = "Restoring Cards..."; // Update button text
+        await restoreCards(); // Trigger the undo function!
+      }
+
+      // Save the new settings
+      await t.set('board', 'shared', {
         'sweepEnabled': isEnabled,
         'sweepThreshold': days
-      }).then(function() {
-        // Visual Success Feedback
-        btn.textContent = "✔ Saved!";
-        btn.style.backgroundColor = "#61bd4f"; // Trello Success Green
-        btn.style.color = "white";
-
-        // Attempt to safely close the menu after 1 second
-        setTimeout(function() {
-          try { t.closePopup(); } catch(e) { console.log("Menu remains open contextually."); }
-        }, 1000);
       });
+
+      // Show visual success
+      btn.textContent = "✔ Saved!";
+      btn.style.backgroundColor = "#61bd4f";
+      btn.style.color = "white";
+
+      setTimeout(function() {
+        try { t.closePopup(); } catch(e) {}
+      }, 1500);
     });
   </script>
 </body>
