@@ -1,3 +1,5 @@
+const SAFE_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM1ZTZjODQiIHN0cm9rZS13aWR0aD0iMiIgY3g9IjEyIiBjeT0iMTIiIHI9IjkiPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjkiLz48L3N2Zz4=';
+
 // Helper function to calculate exact days between a given date and today
 function calculateDays(dateString) {
   if (!dateString) return 0;
@@ -98,8 +100,8 @@ window.TrelloPowerUp.initialize({
 
       return [{
         icon: {
-          dark: 'https://cdn.hyperdev.com/us-east-1%3A3d311d30-503d-4299-9432-03d872f2d924%2Fgray-dot.svg',
-          light: 'https://cdn.hyperdev.com/us-east-1%3A3d311d30-503d-4299-9432-03d872f2d924%2Fgray-dot.svg'
+          dark: SAFE_ICON,
+          light: SAFE_ICON
         },
         text: '🧹 Sweep Stale Cards',
         callback: function(t) {

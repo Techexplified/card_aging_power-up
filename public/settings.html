@@ -35,14 +35,26 @@
 
     // Save settings back to the board
     document.getElementById('saveBtn').addEventListener('click', function() {
+      const btn = document.getElementById('saveBtn');
+      btn.textContent = "Saving...";
+      btn.disabled = true;
+
       const isEnabled = document.getElementById('enableToggle').checked;
-      const days = parseInt(document.getElementById('daysInput').value, 10);
+      const days = parseInt(document.getElementById('daysInput').value, 10) || 30;
 
       t.set('board', 'shared', {
         'sweepEnabled': isEnabled,
         'sweepThreshold': days
       }).then(function() {
-        t.closePopup();
+        // Visual Success Feedback
+        btn.textContent = "✔ Saved!";
+        btn.style.backgroundColor = "#61bd4f"; // Trello Success Green
+        btn.style.color = "white";
+
+        // Attempt to safely close the menu after 1 second
+        setTimeout(function() {
+          try { t.closePopup(); } catch(e) { console.log("Menu remains open contextually."); }
+        }, 1000);
       });
     });
   </script>
