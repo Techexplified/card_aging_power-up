@@ -37,6 +37,7 @@
       appName: 'Board Declutter'
     });
 
+    // 1. Load Settings
     t.render(function() {
       t.get('board', 'shared').then(function(data) {
         if (data) {
@@ -48,12 +49,10 @@
       });
     });
 
-    // 🚀 UPDATED BULLETPROOF RESTORE LOGIC
-    async function restoreCards() {
+    // 🚀 SMART RECONCILIATION LOGIC
+    async function enforceNewSettings(isEnabled, ignoreStarter, thresholdDays) {
       try {
         let isAuth = await t.getRestApi().isAuthorized();
-        
-        // If Trello forgot the token, force the auth popup before trying to move cards
         if (!isAuth) {
           await t.getRestApi().authorize({ scope: 'read,write', expiration: '30days' });
         }
@@ -65,40 +64,63 @@
         const staleList = lists.find(l => l.name.toLowerCase() === 'stale cards');
         if (!staleList) return; 
 
-        // FALLBACK: If a card has no label, send it to the first list on the board
         const fallbackListId = lists[0].id; 
-
         const allCards = await t.cards('id', 'idList', 'labels');
-        const cardsToRestore = allCards.filter(c => c.idList === staleList.id);
+        const cardsInStale = allCards.filter(c => c.idList === staleList.id);
 
-        for (const card of cardsToRestore) {
-          let targetListId = fallbackListId; // Default to fallback
+        const now = new Date();
+
+        // Check every card currently in the Stale list against the NEW rules
+        for (const card of cardsInStale) {
+          let targetListId = fallbackListId; 
           let labelToRemoveId = null;
+          let originalListName = "";
 
-          // Try to find the original list from the label
+          // Figure out where it came from
           for (const label of card.labels) {
             const matchedList = lists.find(l => l.name === label.name);
             if (matchedList) {
               targetListId = matchedList.id;
               labelToRemoveId = label.id;
+              originalListName = matchedList.name.toLowerCase();
               break;
             }
           }
 
-          // Move card (either to its original list, or the fallback list)
-          await fetch(`https://api.trello.com/1/cards/${card.id}?idList=${targetListId}&${authStr}`, { method: 'PUT' });
-          
-          // Delete the label if we found one
-          if (labelToRemoveId) {
-            await fetch(`https://api.trello.com/1/cards/${card.id}/idLabels/${labelToRemoveId}?${authStr}`, { method: 'DELETE' });
+          // Calculate its actual age
+          const creationTimestamp = parseInt(card.id.substring(0, 8), 16) * 1000;
+          const daysOld = Math.floor((now - new Date(creationTimestamp)) / 86400000);
+
+          let shouldRestore = false;
+
+          // RULE 1: If the whole feature is turned off, restore it.
+          if (!isEnabled) {
+            shouldRestore = true; 
+          } 
+          // RULE 2: If we are ignoring the Starter Guide again, restore starter cards.
+          else if (ignoreStarter && originalListName === 'trello starter guide') {
+            shouldRestore = true; 
+          } 
+          // RULE 3: If the threshold went up, and this card is no longer old enough, restore it.
+          else if (daysOld < thresholdDays) {
+            shouldRestore = true; 
+          }
+
+          // Move the card back if it failed the new rules
+          if (shouldRestore) {
+            await fetch(`https://api.trello.com/1/cards/${card.id}?idList=${targetListId}&${authStr}`, { method: 'PUT' });
+            if (labelToRemoveId) {
+              await fetch(`https://api.trello.com/1/cards/${card.id}/idLabels/${labelToRemoveId}?${authStr}`, { method: 'DELETE' });
+            }
           }
         }
-      } catch (e) { console.error("Restore failed:", e); }
+      } catch (e) { console.error("Enforce settings failed:", e); }
     }
 
+    // 2. Save Button Click
     document.getElementById('saveBtn').addEventListener('click', async function() {
       const btn = document.getElementById('saveBtn');
-      btn.textContent = "Saving...";
+      btn.textContent = "Applying Settings...";
       btn.disabled = true;
 
       const isEnabled = document.getElementById('enableToggle').checked;
@@ -106,15 +128,11 @@
       const hideBadges = document.getElementById('hideBadgesToggle').checked;
       const days = parseInt(document.getElementById('daysInput').value, 10) || 30;
 
+      // Run the smart check to boot out any cards that no longer belong!
+      await enforceNewSettings(isEnabled, ignoreStarter, days);
+
       const currentData = await t.get('board', 'shared') || {};
-      const wasEnabled = currentData.sweepEnabled || false;
-
-      // TRIGGER RESTORE IF UNCHECKED
-      if (wasEnabled && !isEnabled) {
-        btn.textContent = "Restoring Cards..."; 
-        await restoreCards(); 
-      }
-
+      
       await t.set('board', 'shared', {
         ...currentData,
         'sweepEnabled': isEnabled,
