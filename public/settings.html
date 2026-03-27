@@ -6,7 +6,6 @@
   <style>
     body { padding: 12px; font-family: -apple-system, sans-serif; }
     .row { margin-bottom: 12px; }
-    /* Dark mode support */
     @media (prefers-color-scheme: dark) {
       body { color: #b6c2cf; background-color: #282e33; }
       input[type="number"] { background: #22272b; color: white; border: 1px solid #738496; }
@@ -33,29 +32,31 @@
     // 🚨 PASTE YOUR API KEY HERE BETWEEN THE QUOTES
     const API_KEY = '8ff35f5f772805ddb9058e7b406afd00';
 
-    
     var t = window.TrelloPowerUp.iframe({
       appKey: API_KEY,
-      appName: 'Card Aging Power-Up'
+      appName: 'Board Declutter'
     });
 
-    // 1. Load existing settings reliably
     t.render(function() {
       t.get('board', 'shared').then(function(data) {
         if (data) {
           document.getElementById('enableToggle').checked = data.sweepEnabled || false;
           document.getElementById('ignoreStarterToggle').checked = data.ignoreStarter !== false; 
-          document.getElementById('hideBadgesToggle').checked = data.hideBadges || false; // Load new setting
+          document.getElementById('hideBadgesToggle').checked = data.hideBadges || false; 
           document.getElementById('daysInput').value = data.sweepThreshold || 30;
         }
       });
     });
 
-    // Restore Cards Logic
+    // 🚀 UPDATED BULLETPROOF RESTORE LOGIC
     async function restoreCards() {
       try {
-        const isAuth = await t.getRestApi().isAuthorized();
-        if (!isAuth) return; 
+        let isAuth = await t.getRestApi().isAuthorized();
+        
+        // If Trello forgot the token, force the auth popup before trying to move cards
+        if (!isAuth) {
+          await t.getRestApi().authorize({ scope: 'read,write', expiration: '30days' });
+        }
 
         const token = await t.getRestApi().getToken();
         const authStr = `key=${API_KEY}&token=${token}`;
@@ -64,13 +65,17 @@
         const staleList = lists.find(l => l.name.toLowerCase() === 'stale cards');
         if (!staleList) return; 
 
+        // FALLBACK: If a card has no label, send it to the first list on the board
+        const fallbackListId = lists[0].id; 
+
         const allCards = await t.cards('id', 'idList', 'labels');
         const cardsToRestore = allCards.filter(c => c.idList === staleList.id);
 
         for (const card of cardsToRestore) {
-          let targetListId = null;
+          let targetListId = fallbackListId; // Default to fallback
           let labelToRemoveId = null;
 
+          // Try to find the original list from the label
           for (const label of card.labels) {
             const matchedList = lists.find(l => l.name === label.name);
             if (matchedList) {
@@ -80,15 +85,17 @@
             }
           }
 
-          if (targetListId) {
-            await fetch(`https://api.trello.com/1/cards/${card.id}?idList=${targetListId}&${authStr}`, { method: 'PUT' });
+          // Move card (either to its original list, or the fallback list)
+          await fetch(`https://api.trello.com/1/cards/${card.id}?idList=${targetListId}&${authStr}`, { method: 'PUT' });
+          
+          // Delete the label if we found one
+          if (labelToRemoveId) {
             await fetch(`https://api.trello.com/1/cards/${card.id}/idLabels/${labelToRemoveId}?${authStr}`, { method: 'DELETE' });
           }
         }
       } catch (e) { console.error("Restore failed:", e); }
     }
 
-    // 2. Save Settings (Fixed the overwrite bug!)
     document.getElementById('saveBtn').addEventListener('click', async function() {
       const btn = document.getElementById('saveBtn');
       btn.textContent = "Saving...";
@@ -99,21 +106,20 @@
       const hideBadges = document.getElementById('hideBadgesToggle').checked;
       const days = parseInt(document.getElementById('daysInput').value, 10) || 30;
 
-      // Fetch the most recent data to ensure we don't overwrite blindly
       const currentData = await t.get('board', 'shared') || {};
       const wasEnabled = currentData.sweepEnabled || false;
 
+      // TRIGGER RESTORE IF UNCHECKED
       if (wasEnabled && !isEnabled) {
         btn.textContent = "Restoring Cards..."; 
         await restoreCards(); 
       }
 
-      // Explicitly save the merged data to fix the update bug
       await t.set('board', 'shared', {
         ...currentData,
         'sweepEnabled': isEnabled,
         'ignoreStarter': ignoreStarter,
-        'hideBadges': hideBadges, // Save the new setting
+        'hideBadges': hideBadges, 
         'sweepThreshold': days
       });
 
