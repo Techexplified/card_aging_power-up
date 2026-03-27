@@ -68,19 +68,6 @@ window.TrelloPowerUp.initialize({
     }).catch(e => { return []; });
   },
 
-  // 3. INSIDE CARD (The big health bar section)
-  'card-back-section': function(t, options) {
-    return t.get('board', 'shared', 'hideBadges').then(function(hideBadges) {
-      // If the setting is checked, return null to completely remove the section
-      if (hideBadges) return null; 
-
-      return {
-        title: 'Card Health',
-        icon: SAFE_ICON,
-        content: { type: 'iframe', url: t.signUrl('./status.html'), height: 120 }
-      };
-    }).catch(e => { return null; });
-  },
 
   // BOARD BUTTONS & SETTINGS
   'show-settings': function(t, options) {
