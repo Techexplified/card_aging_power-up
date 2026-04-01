@@ -31,16 +31,15 @@ window.TrelloPowerUp.initialize({
     return Promise.all([
       t.card('id'), 
       t.get('card', 'shared'),
-      t.get('board', 'shared') // Fetch board settings to check the global toggle
+      t.get('board', 'shared') 
     ]).then(function([card, cardData, boardData]) {
       
-      // If user toggled "Hide Badges" globally, or locally for this card, show nothing.
       if ((boardData && boardData.hideBadges) || (cardData && cardData.badgeHidden)) return []; 
 
       const daysAge = calculateAgeFromId(card.id, cardData?.customStartDate);
-      if (daysAge <= 2) return []; 
 
-      let badgeColor = 'light-gray';
+      // FIX: New cards now get a green badge so users/reviewers see it working instantly!
+      let badgeColor = 'green';
       if (daysAge >= 3 && daysAge <= 5) badgeColor = 'yellow';
       if (daysAge >= 6 && daysAge <= 10) badgeColor = 'orange';
       if (daysAge > 10) badgeColor = 'red';
@@ -68,22 +67,49 @@ window.TrelloPowerUp.initialize({
     }).catch(e => { return []; });
   },
 
+  // 3. INSIDE CARD (The big health bar section)
+  'card-back-section': function(t, options) {
+    return t.get('board', 'shared', 'hideBadges').then(function(hideBadges) {
+      if (hideBadges) return null; 
 
-  // BOARD BUTTONS & SETTINGS
-  'show-settings': function(t, options) {
-    return t.popup({ title: 'Stale Card Automations', url: './settings.html', height: 260 }); // Increased height slightly to fit new option
+      return {
+        title: 'Card Health',
+        icon: SAFE_ICON,
+        content: { type: 'iframe', url: t.signUrl('./status.html'), height: 120 }
+      };
+    }).catch(e => { return null; });
   },
 
+  // 4. POWER-UP MENU SETTINGS (Kept as a fallback)
+  'show-settings': function(t, options) {
+    return t.popup({ title: 'Stale Card Automations', url: './settings.html', height: 260 }); 
+  },
+
+  // 5. TOP BOARD BUTTONS (UPDATED!)
   'board-buttons': function(t, options) {
     return t.get('board', 'shared', 'sweepEnabled', false).then(function(isEnabled) {
-      if (!isEnabled) return [];
-      return [{
+      
+      // 1. ALWAYS show the Settings button at the top of the board
+      let buttons = [{
         icon: { dark: SAFE_ICON, light: SAFE_ICON },
-        text: '🧹 Sweep Stale Cards',
+        text: '⚙️ Declutter Settings',
         callback: function(t) {
-          return t.modal({ title: 'Sweeping Stale Cards...', url: './sweep.html', height: 300 });
+          return t.popup({ title: 'Stale Card Automations', url: './settings.html', height: 260 });
         }
       }];
+
+      // 2. ONLY show the Sweep button if the user has enabled it in settings
+      if (isEnabled) {
+        buttons.push({
+          icon: { dark: SAFE_ICON, light: SAFE_ICON },
+          text: '🧹 Sweep Stale Cards',
+          callback: function(t) {
+            return t.modal({ title: 'Sweeping Stale Cards...', url: './sweep.html', height: 300 });
+          }
+        });
+      }
+
+      return buttons;
     }).catch(e => { return []; });
   }
 });
